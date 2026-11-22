@@ -1,0 +1,97 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *, :root:has(> head > meta[name="color-scheme"][content="dark"]) *));
+
+:root {
+  color-scheme: light;
+  --background: #f9fafb;
+  --foreground: #111827;
+}
+
+:root:has(> head > meta[name="color-scheme"][content="dark"]) {
+  color-scheme: dark;
+  --background: #0a0a0b;
+  --foreground: #f3f4f6;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-inter), ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+dialog:modal {
+  overscroll-behavior: contain;
+}
+
+dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+  background-color: rgb(17 24 39 / 0.35);
+}
+
+.leads-table-wrapper {
+  overflow: auto;
+  max-inline-size: 100%;
+  container-type: inline-size;
+}
+
+.hover-thin-scrollbar {
+  scrollbar-width: none;
+}
+
+.hover-thin-scrollbar::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.hover-thin-scrollbar::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 9999px;
+}
+
+.hover-thin-scrollbar:hover {
+  scrollbar-width: thin;
+}
+
+.hover-thin-scrollbar:hover::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.55);
+}
+
+@container (width < 720px) {
+  .leads-responsive-table,
+  .leads-responsive-table thead,
+  .leads-responsive-table tbody,
+  .leads-responsive-table tr,
+  .leads-responsive-table th,
+  .leads-responsive-table td {
+    display: block;
+  }
+
+  .leads-responsive-table thead {
+    display: none;
+  }
+
+  .leads-responsive-table tbody tr {
+    margin-block-end: 0.75rem;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 0.75rem;
+    background-color: #ffffff;
+  }
+
+  .dark .leads-responsive-table tbody tr {
+    border-color: #27272a;
+    background-color: #111827;
+  }
+
+  .leads-responsive-table tbody td[data-label]::before {
+    content: attr(data-label) ": ";
+    font-weight: 500;
+    color: #6b7280;
+    margin-inline-end: 0.25rem;
+  }
+}
