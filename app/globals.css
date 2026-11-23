@@ -6,12 +6,49 @@
   color-scheme: light;
   --background: #f9fafb;
   --foreground: #111827;
+  --surface: #ffffff;
+  --surface-subtle: #f9fafb;
+  --surface-hover: #f3f4f6;
+  --border: #e5e7eb;
+  --text-primary: #111827;
+  --text-secondary: #4b5563;
+  --text-label: #6b7280;
+  --text-hint: #9ca3af;
+  --accent: #4f46e5;
+  --accent-hover: #4338ca;
+  --accent-tint: #eef2ff;
+  --radius-card: 10px;
+  --radius-control: 8px;
+  --status-new: #9ca3af;
+  --status-contacted: #3b82f6;
+  --status-replied: #f59e0b;
+  --status-meeting-booked: #8b5cf6;
+  --status-won: #16a34a;
+  --status-lost: #d1d5db;
 }
 
-:root:has(> head > meta[name="color-scheme"][content="dark"]) {
+:root:has(> head > meta[name="color-scheme"][content="dark"]),
+.dark {
   color-scheme: dark;
-  --background: #0a0a0b;
-  --foreground: #f3f4f6;
+  --background: #09090b;
+  --foreground: #f4f4f5;
+  --surface: #111113;
+  --surface-subtle: #18181b;
+  --surface-hover: #27272a;
+  --border: #27272a;
+  --text-primary: #f4f4f5;
+  --text-secondary: #a1a1aa;
+  --text-label: #a1a1aa;
+  --text-hint: #71717a;
+  --accent: #4f46e5;
+  --accent-hover: #6366f1;
+  --accent-tint: rgba(79, 70, 229, 0.14);
+  --status-new: #71717a;
+  --status-contacted: #3b82f6;
+  --status-replied: #f59e0b;
+  --status-meeting-booked: #8b5cf6;
+  --status-won: #16a34a;
+  --status-lost: #52525b;
 }
 
 body {

@@ -83,6 +83,14 @@ export async function fetchYouTubeLeads(
         searchUrl.searchParams.set("part", "snippet");
         searchUrl.searchParams.set("type", "channel");
         searchUrl.searchParams.set("q", query);
+        const orders = ["relevance", "date", "viewCount"] as const;
+        const order = orders[(params.runIndex ?? 0) % orders.length];
+        if (order !== "relevance") {
+          searchUrl.searchParams.set("order", order);
+        }
+        if (params.sinceIso) {
+          searchUrl.searchParams.set("publishedAfter", params.sinceIso);
+        }
         const regionCode = combo.country ? getIso2(combo.country) : undefined;
         if (regionCode) {
           searchUrl.searchParams.set("regionCode", regionCode);

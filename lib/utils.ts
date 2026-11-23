@@ -45,12 +45,22 @@ export const PIPELINE_STATUSES: LeadStatus[] = [
 
 export const STATUS_DOT_COLORS: Record<LeadStatus, string> = {
   new: "bg-gray-400",
-  contacted: "bg-indigo-500",
+  contacted: "bg-blue-500",
   replied: "bg-amber-500",
-  meeting_booked: "bg-amber-600",
+  meeting_booked: "bg-violet-500",
   won: "bg-green-600",
-  lost: "bg-red-500",
-  not_fit: "bg-gray-300 dark:bg-gray-600",
+  lost: "bg-gray-300 dark:bg-neutral-600",
+  not_fit: "bg-gray-300 dark:bg-neutral-600",
+};
+
+export const STATUS_HEX_COLORS: Record<LeadStatus, string> = {
+  new: "var(--status-new)",
+  contacted: "var(--status-contacted)",
+  replied: "var(--status-replied)",
+  meeting_booked: "var(--status-meeting-booked)",
+  won: "var(--status-won)",
+  lost: "var(--status-lost)",
+  not_fit: "var(--status-lost)",
 };
 
 export const PLATFORM_LABELS: Record<LeadPlatform, string> = {

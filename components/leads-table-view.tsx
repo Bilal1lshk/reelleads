@@ -1126,7 +1126,7 @@ export function LeadsTableView({ savedOnly = false }: { savedOnly?: boolean }) {
             </Button>
 
             {columnsMenuOpen && (
-              <div className="absolute right-0 top-9 z-30 w-64 rounded-lg border border-gray-200 bg-white p-2 space-y-1 dark:border-neutral-800 dark:bg-neutral-900">
+              <div className="absolute right-0 top-10 z-30 w-64 rounded-[10px] border border-gray-200 bg-white p-2.5 shadow-md space-y-1 dark:border-neutral-800 dark:bg-neutral-900">
                 <div className="flex items-center justify-between px-1 pb-1 border-b border-gray-100 text-xs font-medium dark:border-neutral-800">
                   <span>Columns</span>
                   <button
@@ -1368,9 +1368,9 @@ export function LeadsTableView({ savedOnly = false }: { savedOnly?: boolean }) {
           </div>
         </div>
       ) : (
-        <div className="leads-table-wrapper rounded-lg border border-gray-200 bg-white dark:border-neutral-800 dark:bg-neutral-900 max-h-[68vh]">
+        <div className="leads-table-wrapper rounded-[10px] border border-gray-200 bg-white dark:border-neutral-800 dark:bg-neutral-900 max-h-[68vh]">
           <table className="leads-responsive-table w-full table-fixed border-collapse text-left text-xs">
-            <thead className="sticky top-0 z-20 border-b border-gray-200 bg-gray-50/95 backdrop-blur-xs text-[11px] font-semibold uppercase tracking-wider text-gray-500 dark:border-neutral-800 dark:bg-neutral-950/95 dark:text-gray-400">
+            <thead className="sticky top-0 z-20 border-b border-gray-200 bg-gray-50 text-xs font-medium text-gray-500 dark:border-neutral-800 dark:bg-neutral-950 dark:text-gray-400">
               {table.getHeaderGroups().map((hg) => (
                 <tr key={hg.id}>
                   {hg.headers.map((header) => {
@@ -1428,16 +1428,26 @@ export function LeadsTableView({ savedOnly = false }: { savedOnly?: boolean }) {
                   tabIndex={0}
                   onClick={() => openDrawer(row.original.id)}
                   onKeyDown={(e) => handleRowKeyDown(e, row.original.id)}
-                  className="hover:bg-gray-50/80 focus-visible:bg-gray-100 focus-visible:outline-none dark:hover:bg-neutral-800/40 cursor-pointer transition-colors"
+                  className={cn(
+                    "h-11 hover:bg-gray-50 focus-visible:bg-gray-100 focus-visible:outline-none dark:hover:bg-neutral-800/40 cursor-pointer transition-colors",
+                    row.getIsSelected() && "bg-indigo-50/60 dark:bg-indigo-950/30"
+                  )}
                 >
                   {row.getVisibleCells().map((cell) => {
                     const colSize = cell.column.getSize();
+                    const isNumeric =
+                      cell.column.id === "score" ||
+                      cell.column.id === "followers" ||
+                      cell.column.id === "postsPerWeek";
                     return (
                       <td
                         key={cell.id}
                         data-label={COLUMN_LABELS[cell.column.id]}
                         style={{ width: colSize, maxWidth: colSize }}
-                        className="px-3 py-2.5 align-middle overflow-hidden"
+                        className={cn(
+                          "px-3 py-2 align-middle overflow-hidden",
+                          isNumeric && "text-right tabular-nums"
+                        )}
                       >
                         {flexRender(
                           cell.column.columnDef.cell,

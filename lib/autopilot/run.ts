@@ -102,6 +102,9 @@ export async function runSavedSearch(
       workspaceId: saved.workspaceId,
       count: cappedCount >= 25 ? 25 : 10,
       saveToCrm: false,
+      excludeExisting: true,
+      runIndex: saved.runCount ?? 0,
+      sinceIso: saved.lastRunAt,
     });
 
     const perSource: AutopilotRunSourceStat[] = (
@@ -121,7 +124,7 @@ export async function runSavedSearch(
       .slice(0, saved.maxLeadsPerRun || 25);
 
     const newLeads: Lead[] = [];
-    let duplicatesSkipped = 0;
+    let duplicatesSkipped = searchRes.duplicatesSkipped ?? 0;
     const freshAt = new Date().toISOString();
 
     const settingsCol = await getWorkspaceSettingsCollection();
@@ -139,7 +142,7 @@ export async function runSavedSearch(
         searchRunId: searchRes.searchRunId,
         sourceStats: searchRes.sourceStats,
       });
-      duplicatesSkipped = staged.duplicateCount;
+      duplicatesSkipped += staged.duplicateCount;
     } else {
       for (const lead of qualified) {
         const dedupeKey = buildDedupeKey(lead);
@@ -228,6 +231,7 @@ export async function runSavedSearch(
           nextRunAt,
           runningLockAt: null,
         },
+        $inc: { runCount: 1 },
       }
     );
 

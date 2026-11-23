@@ -170,6 +170,12 @@ export type SearchLeadsParams = {
   offer?: string;
   /** When false, returns leads for preview without auto-saving to MongoDB. Defaults to true. */
   saveToCrm?: boolean;
+  /** When true (default), filters out leads already in CRM or pending/discarded review before slicing to count. */
+  excludeExisting?: boolean;
+  /** Zero-based run/page counter used by connectors to paginate and rotate query angles across runs. */
+  runIndex?: number;
+  /** ISO timestamp; connectors that support freshness filters restrict results to items after this time. */
+  sinceIso?: string;
 };
 
 export type SourceStat = {
@@ -195,6 +201,7 @@ export type SearchRun = {
   requestedCount: number;
   insertedCount: number;
   updatedCount: number;
+  duplicatesSkipped?: number;
   warnings: string[];
   sourceStats?: SourceStat[];
   createdAt: string;
@@ -232,6 +239,7 @@ export interface SavedSearch {
   runningLockAt?: string | null;
   lastRunAt?: string;
   nextRunAt?: string;
+  runCount?: number;
   createdAt: string;
 }
 

@@ -24,6 +24,7 @@ import { isAllowedCountry, resolveCountryFilters } from "@/lib/countries";
 import {
   buildDedupeKey,
   getLeadsCollection,
+  getPendingLeadsCollection,
   getSearchRunsCollection,
   isMongoConfigured,
 } from "@/lib/mongodb";
@@ -87,6 +88,7 @@ export async function runMultiPlatformSearch(params: SearchLeadsParams): Promise
   sourceStats: SourceStat[];
   insertedCount: number;
   updatedCount: number;
+  duplicatesSkipped: number;
   searchRunId: string;
 }> {
   const requestedPlatforms: LeadPlatform[] =
@@ -180,9 +182,53 @@ export async function runMultiPlatformSearch(params: SearchLeadsParams): Promise
     });
   }
 
+  const workspaceId = params.workspaceId || "default";
+
+  // Pre-slice deduplication against existing CRM leads and pending/reviewed leads
+  // so `params.count` is filled with net-new leads whenever possible.
+  let existingKeys = new Set<string>();
+  if (params.excludeExisting !== false && isMongoConfigured() && dedupedMap.size > 0) {
+    try {
+      const candidateKeys = Array.from(dedupedMap.keys());
+      const [leadsCol, pendingCol] = await Promise.all([
+        getLeadsCollection(),
+        getPendingLeadsCollection(),
+      ]);
+      const [existingLeads, existingPending] = await Promise.all([
+        leadsCol
+          .find(
+            { dedupeKey: { $in: candidateKeys } },
+            { projection: { _id: 0, dedupeKey: 1 } }
+          )
+          .toArray(),
+        pendingCol
+          .find(
+            { workspaceId, "lead.dedupeKey": { $in: candidateKeys } },
+            { projection: { _id: 0, "lead.dedupeKey": 1 } }
+          )
+          .toArray(),
+      ]);
+      for (const doc of existingLeads) {
+        if (doc.dedupeKey) existingKeys.add(doc.dedupeKey);
+      }
+      for (const doc of existingPending) {
+        if (doc.lead?.dedupeKey) existingKeys.add(doc.lead.dedupeKey);
+      }
+    } catch {
+      existingKeys = new Set<string>();
+    }
+  }
+
   // Rank verified target-country leads above unverified ones when a country filter is active,
-  // then by score descending.
-  const sortedUnique = Array.from(dedupedMap.values())
+  // then by score descending, excluding already-seen leads before slicing to `params.count`.
+  const allCandidates = Array.from(dedupedMap.values());
+  const netNewCandidates =
+    existingKeys.size > 0
+      ? allCandidates.filter((l) => !l.dedupeKey || !existingKeys.has(l.dedupeKey))
+      : allCandidates;
+  const duplicatesSkipped = allCandidates.length - netNewCandidates.length;
+
+  const sortedUnique = netNewCandidates
     .sort((a, b) => {
       if (allowedCountries.length > 0) {
         const av = a.countryVerified ? 1 : 0;
@@ -200,10 +246,6 @@ export async function runMultiPlatformSearch(params: SearchLeadsParams): Promise
 
   let insertedCount = 0;
   let updatedCount = 0;
-
-  const workspaceId =
-    params.workspaceId ||
-    "default";
 
   if (params.saveToCrm !== false && isMongoConfigured() && uniqueLeads.length > 0) {
     const saved = await saveLeadsToCrm(uniqueLeads, workspaceId);
@@ -226,6 +268,7 @@ export async function runMultiPlatformSearch(params: SearchLeadsParams): Promise
       requestedCount: params.count,
       insertedCount,
       updatedCount,
+      duplicatesSkipped,
       warnings,
       sourceStats,
       createdAt: new Date().toISOString(),
@@ -239,6 +282,7 @@ export async function runMultiPlatformSearch(params: SearchLeadsParams): Promise
     sourceStats,
     insertedCount,
     updatedCount,
+    duplicatesSkipped,
     searchRunId,
   };
 }

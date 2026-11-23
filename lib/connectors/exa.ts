@@ -187,8 +187,17 @@ export async function fetchExaLeads(
   }
 
   const exa = new Exa(apiKey);
-  const queries = buildExaQueries(params);
-  const numResults = params.count === 10 ? 10 : 20;
+  const rawQueries = buildExaQueries(params);
+  const runIdx = params.runIndex ?? 0;
+  const queries =
+    runIdx > 0 && rawQueries.length > 1
+      ? [
+          ...rawQueries.slice(runIdx % rawQueries.length),
+          ...rawQueries.slice(0, runIdx % rawQueries.length),
+        ]
+      : rawQueries;
+  const numResults = params.count === 10 ? 10 : Math.min(30, 20 + (runIdx % 2) * 10);
+  const startPublishedDate = params.sinceIso;
   const seenUrls = new Set<string>();
   const collected: Lead[] = [];
   const errors: string[] = [];
@@ -196,7 +205,7 @@ export async function fetchExaLeads(
   for (const q of queries) {
     if (ctx?.signal.aborted || collected.length >= EXA_CAP) break;
 
-    const cacheKey = `exa:v2:${numResults}:${q.query.toLowerCase()}`;
+    const cacheKey = `exa:v2:${numResults}:r${runIdx % 4}:${startPublishedDate ?? ""}:${q.query.toLowerCase()}`;
     let results = await getCached<
       Array<{ url: string; title?: string | null; highlights?: string[] }>
     >(cacheKey);
@@ -207,6 +216,7 @@ export async function fetchExaLeads(
         const response = await exa.search(q.query, {
           type: "auto",
           numResults,
+          ...(startPublishedDate ? { startPublishedDate } : {}),
           contents: { highlights: true },
         });
         results = (response.results ?? []).map((r) => ({

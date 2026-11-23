@@ -86,8 +86,7 @@ export function parseLeadDisplayName(
     }
   }
 
-  // 3. Could not parse cleanly: log and return original name
-  console.warn("[Overview] Could not parse lead title:", raw);
+  // 3. Could not parse cleanly: return original name
   return { displayName: raw, postSnippet: null };
 }
 

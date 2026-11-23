@@ -227,6 +227,15 @@ async function runGoogleCseQueries(
   }
 
   const isLinkedInMode = sourcePlatform === "linkedin";
+  const start = (((params.runIndex ?? 0) % 5) * 10) + 1;
+  let dateRestrict: string | undefined;
+  if (params.sinceIso) {
+    const ageMs = Date.now() - new Date(params.sinceIso).getTime();
+    if (Number.isFinite(ageMs) && ageMs > 0) {
+      const days = ageMs / (24 * 60 * 60 * 1000);
+      dateRestrict = days <= 1.5 ? "d1" : days <= 8 ? "w1" : "m1";
+    }
+  }
   const seenUrls = new Set<string>();
   const collected: Lead[] = [];
   const errors: string[] = [];
@@ -236,7 +245,7 @@ async function runGoogleCseQueries(
 
     const cacheKey = `cse:${crypto
       .createHash("sha256")
-      .update(`${cx}:${q.query}`)
+      .update(`${cx}:${q.query}:start=${start}:dr=${dateRestrict ?? ""}`)
       .digest("hex")
       .slice(0, 20)}`;
 
@@ -248,6 +257,12 @@ async function runGoogleCseQueries(
         url.searchParams.set("key", apiKey);
         url.searchParams.set("cx", cx);
         url.searchParams.set("q", q.query);
+        if (start > 1) {
+          url.searchParams.set("start", String(start));
+        }
+        if (dateRestrict) {
+          url.searchParams.set("dateRestrict", dateRestrict);
+        }
         url.searchParams.set("num", "10");
 
         const fetchSignal = ctx?.signal

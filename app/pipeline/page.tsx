@@ -52,8 +52,8 @@ function PipelineCard({
       {...listeners}
       onClick={() => onOpen(lead.id)}
       className={cn(
-        "rounded-lg border border-gray-200 bg-white p-2.5 text-xs space-y-1.5 cursor-grab active:cursor-grabbing hover:border-gray-300 dark:border-neutral-800 dark:bg-neutral-900 dark:hover:border-neutral-700",
-        isDragging && "opacity-60 ring-2 ring-indigo-600"
+        "rounded-[8px] border border-gray-200 bg-white p-3 text-xs space-y-1.5 cursor-grab active:cursor-grabbing hover:border-gray-300 dark:border-neutral-800 dark:bg-neutral-900 dark:hover:border-neutral-700",
+        isDragging && "opacity-60 ring-2 ring-indigo-600/50"
       )}
     >
       <div className="flex items-start justify-between gap-2">
@@ -93,8 +93,8 @@ function PipelineColumn({
     <div
       ref={setNodeRef}
       className={cn(
-        "flex min-w-[240px] flex-1 flex-col rounded-lg border border-gray-200 bg-gray-50/80 dark:border-neutral-800 dark:bg-neutral-950",
-        isOver && "ring-2 ring-indigo-600"
+        "flex min-w-[240px] flex-1 flex-col rounded-[10px] border border-gray-200 bg-gray-50 dark:border-neutral-800 dark:bg-neutral-950",
+        isOver && "ring-2 ring-indigo-600/40"
       )}
     >
       <div className="flex items-center justify-between border-b border-gray-200 px-3 py-2.5 dark:border-neutral-800">
@@ -172,12 +172,12 @@ export default function PipelinePage() {
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold tracking-tight text-gray-900 dark:text-gray-100">
+    <div className="mx-auto max-w-[1280px] space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h1 className="text-2xl font-semibold tracking-tight text-gray-900 dark:text-gray-100">
           Pipeline
         </h1>
-        <span className="text-xs text-gray-500">
+        <span className="text-xs text-gray-500 dark:text-gray-400">
           Drag cards between columns to update status
         </span>
       </div>

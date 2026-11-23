@@ -5,25 +5,26 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  ArrowRight,
   ExternalLink,
   Globe,
   Instagram,
   Mail,
   MessageCircle,
+  Repeat,
 } from "lucide-react";
 import {
   getOverview,
+  getPendingLeads,
   updateLead,
   type OverviewData,
-  type OverviewPipelineItem,
   type OverviewTopLead,
 } from "@/lib/api";
 import {
   formatRelativeTime,
-  formatShortDate,
   parseLeadDisplayName,
 } from "@/lib/lead-display";
-import { FEATURE_AUTOPILOT } from "@/lib/config";
+import { FEATURE_AUTOPILOT, FEATURE_REVIEW_BEFORE_SAVE } from "@/lib/config";
 import { useLeadsStore } from "@/lib/store";
 import {
   buildExternalUrl,
@@ -32,6 +33,7 @@ import {
   cn,
   LEAD_STATUS_LABELS,
   PLATFORM_LABELS,
+  STATUS_DOT_COLORS,
 } from "@/lib/utils";
 import type { LeadFilters } from "@/types/lead";
 import { Button } from "@/components/ui/button";
@@ -40,18 +42,9 @@ import { ScoreBadge } from "@/components/score-badge";
 import { LeadDetailDrawer } from "@/components/lead-detail-drawer";
 import { useToast } from "@/components/providers";
 
-const PIPELINE_BAR_COLORS: Record<OverviewPipelineItem["status"], string> = {
-  new: "bg-gray-300 dark:bg-neutral-600",
-  contacted: "bg-gray-400 dark:bg-neutral-500",
-  replied: "bg-gray-500 dark:bg-neutral-400",
-  meeting_booked: "bg-gray-600 dark:bg-neutral-300",
-  won: "bg-indigo-600 dark:bg-indigo-500",
-  lost: "bg-gray-200 dark:bg-neutral-700",
-};
-
 function formatDelta(
   delta: number | null,
-  suffix = "this week",
+  suffix = "vs last week",
   isPercent = false
 ): string | null {
   if (delta === null) return null;
@@ -63,7 +56,8 @@ export default function OverviewPage() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { notify } = useToast();
-  const { workspaceId, openDrawer, applyFilters } = useLeadsStore();
+  const { workspaceId, openDrawer, applyFilters, openReviewModal } =
+    useLeadsStore();
 
   const {
     data,
@@ -76,25 +70,20 @@ export default function OverviewPage() {
     staleTime: 30_000,
   });
 
+  const { data: pendingData } = useQuery({
+    queryKey: ["pending-leads", workspaceId, "all"],
+    queryFn: () => getPendingLeads(workspaceId),
+    enabled: FEATURE_REVIEW_BEFORE_SAVE,
+    staleTime: 15_000,
+  });
+
+  const pendingCount = pendingData?.total ?? 0;
+
   const refreshOverview = React.useCallback(async () => {
     const fresh = await getOverview(workspaceId, true);
     queryClient.setQueryData(["overview", workspaceId], fresh);
     queryClient.invalidateQueries({ queryKey: ["leads"] });
   }, [queryClient, workspaceId]);
-
-  const markFollowUpDoneMutation = useMutation({
-    mutationFn: (id: string) => updateLead(id, { nextFollowUpAt: null }),
-    onSuccess: async () => {
-      notify("Follow-up marked done");
-      await refreshOverview();
-    },
-    onError: (err) => {
-      notify(
-        err instanceof Error ? err.message : "Failed to update follow-up",
-        "error"
-      );
-    },
-  });
 
   const markContactedMutation = useMutation({
     mutationFn: (id: string) =>
@@ -145,18 +134,34 @@ export default function OverviewPage() {
   const statItems = React.useMemo(() => {
     const s = data?.stats;
     const d = data?.deltas;
+
+    const totalSubLine =
+      s && s.withContactInfo !== s.total
+        ? `${s.withContactInfo} with contact info`
+        : null;
+
+    const repliedSubLine = s
+      ? s.contacted > 0
+        ? `${s.replyRate ?? 0}% of ${s.contacted} contacted`
+        : "0 contacted"
+      : null;
+
     return [
       {
         key: "total",
-        label: "Total",
+        label: "Total leads",
+        rawValue: s?.total ?? 0,
         value: s ? String(s.total) : "0",
+        subLine: totalSubLine,
         delta: formatDelta(d?.total ?? null),
         onClick: () => openFilteredLeads({}),
       },
       {
         key: "newThisWeek",
         label: "New this week",
+        rawValue: s?.newThisWeek ?? 0,
         value: s ? String(s.newThisWeek) : "0",
+        subLine: null,
         delta: formatDelta(d?.newThisWeek ?? null),
         onClick: () =>
           openFilteredLeads({ status: "new", dateFrom: sevenDaysAgoIso }),
@@ -164,111 +169,232 @@ export default function OverviewPage() {
       {
         key: "contacted",
         label: "Contacted",
+        rawValue: s?.contacted ?? 0,
         value: s ? String(s.contacted) : "0",
+        subLine: null,
         delta: formatDelta(d?.contacted ?? null),
         onClick: () => openFilteredLeads({ status: "contacted" }),
       },
       {
         key: "replied",
         label: "Replied",
+        rawValue: s?.replied ?? 0,
         value: s ? String(s.replied) : "0",
+        subLine: repliedSubLine,
         delta: formatDelta(d?.replied ?? null),
         onClick: () => openFilteredLeads({ status: "replied" }),
       },
       {
         key: "won",
         label: "Won",
+        rawValue: s?.won ?? 0,
         value: s ? String(s.won) : "0",
+        subLine: null,
         delta: formatDelta(d?.won ?? null),
         onClick: () => openFilteredLeads({ status: "won" }),
-      },
-      {
-        key: "withContactInfo",
-        label: "With contact info",
-        value: s ? String(s.withContactInfo) : "0",
-        delta: formatDelta(d?.withContactInfo ?? null),
-        onClick: () => openFilteredLeads({ hasContact: true }),
-      },
-      {
-        key: "replyRate",
-        label: "Reply rate",
-        value:
-          s && s.contacted > 0 && s.replyRate !== null
-            ? `${s.replyRate}%`
-            : "-",
-        delta: formatDelta(d?.replyRate ?? null, "this week", true),
-        onClick: () => openFilteredLeads({ status: "replied" }),
       },
     ];
   }, [data, openFilteredLeads, sevenDaysAgoIso]);
 
+  const pipeline = React.useMemo(() => data?.pipeline ?? [], [data?.pipeline]);
   const pipelineTotal = React.useMemo(
-    () => (data?.pipeline ?? []).reduce((sum, p) => sum + p.count, 0),
-    [data?.pipeline]
+    () => pipeline.reduce((sum, p) => sum + p.count, 0),
+    [pipeline]
   );
+
+  const newCount = pipeline.find((p) => p.status === "new")?.count ?? 0;
+  const contactedCount =
+    pipeline.find((p) => p.status === "contacted")?.count ?? 0;
+  const repliedCount = pipeline.find((p) => p.status === "replied")?.count ?? 0;
+  const wonCount = pipeline.find((p) => p.status === "won")?.count ?? 0;
+
+  const allLeadsAreNew =
+    pipelineTotal > 0 && newCount === pipelineTotal;
+
+  const pipelineInsight = React.useMemo(() => {
+    if (pipelineTotal === 0) return null;
+    if (contactedCount === 0 && newCount > 0) {
+      return `${newCount} leads not contacted yet`;
+    }
+    if (repliedCount === 0 && contactedCount > 0) {
+      return `${contactedCount} contacted, 0 replies yet`;
+    }
+    return `${repliedCount} replied · ${wonCount} won`;
+  }, [pipelineTotal, contactedCount, newCount, repliedCount, wonCount]);
+
+  const nextActions = React.useMemo(() => {
+    const items: Array<{
+      key: string;
+      label: string;
+      onClick: () => void;
+    }> = [];
+
+    if (pendingCount > 0) {
+      items.push({
+        key: "review-pending",
+        label: `Review ${pendingCount} ${
+          pendingCount === 1 ? "lead" : "leads"
+        } from your last search`,
+        onClick: () => openReviewModal(null),
+      });
+    }
+
+    const highScoreNew = (data?.topNewLeads ?? []).filter(
+      (l) => l.score >= 80
+    );
+    if (highScoreNew.length > 0) {
+      const topN = Math.min(10, highScoreNew.length);
+      items.push({
+        key: "contact-top",
+        label: `Contact your top ${topN} uncontacted ${
+          topN === 1 ? "lead" : "leads"
+        } (score 80+)`,
+        onClick: () => openFilteredLeads({ status: "new", minScore: 80 }),
+      });
+    }
+
+    const dueCount = data?.followUpsDueToday.length ?? 0;
+    if (dueCount > 0) {
+      items.push({
+        key: "follow-ups-due",
+        label: `${dueCount} ${
+          dueCount === 1 ? "follow-up" : "follow-ups"
+        } due today`,
+        onClick: () => openDrawer(data!.followUpsDueToday[0].id),
+      });
+    }
+
+    const s = data?.stats;
+    if (s) {
+      const missingContact = Math.max(0, s.total - s.withContactInfo);
+      if (missingContact > 0) {
+        items.push({
+          key: "add-contact",
+          label: `Add contact info to ${missingContact} ${
+            missingContact === 1 ? "lead" : "leads"
+          }`,
+          onClick: () => openFilteredLeads({}),
+        });
+      }
+      if (s.contacted > 0 && dueCount === 0) {
+        items.push({
+          key: "plan-follow-ups",
+          label: `Plan follow-ups for ${s.contacted} contacted ${
+            s.contacted === 1 ? "lead" : "leads"
+          }`,
+          onClick: () =>
+            openFilteredLeads({ status: "contacted", missingFollowUp: true }),
+        });
+      }
+    }
+
+    return items.slice(0, 5);
+  }, [data, openDrawer, openFilteredLeads, openReviewModal, pendingCount]);
 
   const maxSourceCount = React.useMemo(
     () => Math.max(1, ...(data?.sources ?? []).map((s) => s.count)),
     [data?.sources]
   );
 
+  const visibleTopLeads = React.useMemo(
+    () => (data?.topNewLeads ?? []).slice(0, 8),
+    [data?.topNewLeads]
+  );
+
+  const visibleActivity = React.useMemo(
+    () => (data?.recentActivity ?? []).slice(0, 8),
+    [data?.recentActivity]
+  );
+
   return (
-    <div className="min-w-0 space-y-5">
-      {/* 6. Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="text-lg font-semibold tracking-tight text-gray-900 dark:text-gray-100">
-            Overview
-          </h1>
+    <div className="mx-auto min-w-0 max-w-[1280px] space-y-6">
+      {/* 1. Header */}
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0 space-y-1">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <h1 className="text-2xl font-semibold tracking-tight text-gray-900 dark:text-gray-100">
+              Overview
+            </h1>
+            {FEATURE_AUTOPILOT &&
+              !isLoading &&
+              data?.autopilot &&
+              data.autopilot.activeCount > 0 && (
+                <Link
+                  href="/autopilot"
+                  className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 bg-white px-2.5 py-0.5 text-xs font-medium text-gray-600 transition-colors hover:bg-gray-50 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 dark:border-neutral-800 dark:bg-neutral-900 dark:text-gray-300 dark:hover:bg-neutral-800"
+                >
+                  <Repeat className="h-3.5 w-3.5 text-gray-500 dark:text-gray-400" strokeWidth={1.5} />
+                  <span>
+                    Autopilot on · {data.autopilot.activeCount}{" "}
+                    {data.autopilot.activeCount === 1 ? "search" : "searches"}
+                  </span>
+                </Link>
+              )}
+          </div>
+
           {isLoading ? (
-            <Skeleton className="mt-1 h-4 w-48" />
-          ) : (
+            <Skeleton className="h-4 w-56" />
+          ) : data?.lastSearch ? (
             <p className="text-xs text-gray-500 dark:text-gray-400">
-              {data?.lastSearch
-                ? `Last search: ${formatRelativeTime(data.lastSearch.createdAt)} · ${data.lastSearch.insertedCount} leads added`
-                : "No searches run yet"}
+              <span>
+                Last search {formatRelativeTime(data.lastSearch.createdAt)}
+              </span>
+              {pendingCount > 0 ? (
+                <>
+                  {" · "}
+                  <span className="tabular-nums">
+                    {data.lastSearch.insertedCount + pendingCount} found
+                  </span>
+                  {" · "}
+                  <span className="tabular-nums">
+                    {pendingCount} waiting for review
+                  </span>{" "}
+                  <Link
+                    href="/review"
+                    className="font-medium text-indigo-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 rounded dark:text-indigo-400"
+                  >
+                    Review
+                  </Link>
+                </>
+              ) : (
+                <>
+                  {" · "}
+                  <span className="tabular-nums">
+                    {data.lastSearch.insertedCount} saved
+                  </span>
+                </>
+              )}
             </p>
-          )}
+          ) : null}
         </div>
-        <div className="flex items-center gap-2">
+
+        <div className="flex flex-wrap items-center gap-2">
+          {pendingCount > 0 && (
+            <Link href="/review">
+              <Button
+                variant="ghost"
+                className="min-h-[44px] sm:min-h-0 text-indigo-600 hover:text-indigo-700 dark:text-indigo-400"
+              >
+                Review ({pendingCount})
+              </Button>
+            </Link>
+          )}
           <Link href="/search">
-            <Button variant="outline" size="sm" className="min-h-[44px] sm:min-h-[32px]">
+            <Button variant="secondary" className="min-h-[44px] sm:min-h-0">
               New search
             </Button>
           </Link>
           <Link href="/leads">
-            <Button size="sm" className="min-h-[44px] sm:min-h-[32px]">
+            <Button variant="default" className="min-h-[44px] sm:min-h-0">
               All leads
             </Button>
           </Link>
         </div>
-      </div>
+      </header>
 
-      {FEATURE_AUTOPILOT &&
-        !isLoading &&
-        data?.autopilot &&
-        data.autopilot.activeCount > 0 && (
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2.5 text-sm dark:border-neutral-800 dark:bg-neutral-900">
-            <span className="text-gray-700 dark:text-gray-200">
-              Autopilot:{" "}
-              <span className="font-semibold tabular-nums">
-                {data.autopilot.freshTodayCount}
-              </span>{" "}
-              new leads today
-            </span>
-            <button
-              type="button"
-              onClick={() => openFilteredLeads({ freshToday: true })}
-              className="text-xs font-medium text-indigo-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 rounded px-1 dark:text-indigo-400 cursor-pointer"
-            >
-              View fresh today
-            </button>
-          </div>
-        )}
-
-      {/* 7. Error state */}
+      {/* Error state */}
       {isError && (
-        <div className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-4 py-3 text-sm text-gray-700 dark:border-neutral-800 dark:bg-neutral-900 dark:text-gray-300">
+        <div className="flex items-center justify-between rounded-[10px] border border-gray-200 bg-white px-5 py-3 text-sm text-gray-700 dark:border-neutral-800 dark:bg-neutral-900 dark:text-gray-300">
           <span>Could not load overview data.</span>
           <button
             type="button"
@@ -280,61 +406,76 @@ export default function OverviewPage() {
         </div>
       )}
 
-      {/* 1. Stats Bar */}
+      {/* 3. Stats Row */}
       <section
         aria-label="Key metrics"
-        className="grid grid-cols-2 gap-2 rounded-lg border border-gray-200 bg-white p-3 lg:grid-cols-7 dark:border-neutral-800 dark:bg-neutral-900"
+        className="grid grid-cols-2 divide-y divide-gray-200 overflow-hidden rounded-[10px] border border-gray-200 bg-white md:grid-cols-5 md:divide-x md:divide-y-0 dark:divide-neutral-800 dark:border-neutral-800 dark:bg-neutral-900"
       >
         {isLoading
-          ? Array.from({ length: 7 }).map((_, i) => (
-              <div key={i} className="space-y-1.5 px-2 py-1.5">
+          ? Array.from({ length: 5 }).map((_, i) => (
+              <div key={i} className="space-y-2 p-5">
                 <Skeleton className="h-3.5 w-20" />
-                <Skeleton className="h-6 w-12" />
-                <Skeleton className="h-3 w-16" />
+                <Skeleton className="h-7 w-14" />
+                <Skeleton className="h-3 w-24" />
               </div>
             ))
-          : statItems.map((item) => (
-              <button
-                key={item.key}
-                type="button"
-                onClick={item.onClick}
-                className="flex min-h-[44px] flex-col items-start justify-center rounded-md px-2 py-1.5 text-left transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 dark:hover:bg-neutral-800/60 cursor-pointer"
-              >
-                <span className="text-xs text-gray-500 dark:text-gray-400">
-                  {item.label}
-                </span>
-                <span className="mt-0.5 text-lg font-semibold tabular-nums text-gray-900 dark:text-gray-100">
-                  {item.value}
-                </span>
-                {item.delta !== null && (
-                  <span className="text-[11px] tabular-nums text-gray-500 dark:text-gray-400">
-                    {item.delta}
+          : statItems.map((item) => {
+              const isZero = item.rawValue === 0;
+              return (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={item.onClick}
+                  className="flex min-h-[44px] flex-col items-start justify-start p-5 text-left transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-600 dark:hover:bg-neutral-800/60 cursor-pointer"
+                >
+                  <span className="text-xs font-normal text-gray-500 dark:text-gray-400">
+                    {item.label}
                   </span>
-                )}
-              </button>
-            ))}
+                  <span
+                    className={cn(
+                      "mt-1 text-[28px] leading-tight font-semibold tabular-nums",
+                      isZero
+                        ? "text-gray-400 dark:text-neutral-500"
+                        : "text-gray-900 dark:text-gray-100"
+                    )}
+                  >
+                    {item.value}
+                  </span>
+                  {item.subLine && (
+                    <span className="mt-1 text-xs text-gray-500 tabular-nums dark:text-gray-400">
+                      {item.subLine}
+                    </span>
+                  )}
+                  {item.delta !== null && (
+                    <span className="mt-0.5 text-xs text-gray-500 tabular-nums dark:text-gray-400">
+                      {item.delta}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
       </section>
 
-      {/* 2. Pipeline Snapshot */}
+      {/* 4. Pipeline Snapshot */}
       <section
         aria-label="Pipeline snapshot"
-        className="rounded-lg border border-gray-200 bg-white p-4 dark:border-neutral-800 dark:bg-neutral-900"
+        className="rounded-[10px] border border-gray-200 bg-white p-5 dark:border-neutral-800 dark:bg-neutral-900"
       >
-        <div className="mb-3 flex items-center justify-between">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
             Pipeline snapshot
           </h2>
-          {!isLoading && (
-            <span className="text-xs tabular-nums text-gray-500 dark:text-gray-400">
-              {pipelineTotal} in pipeline
+          {!isLoading && pipelineInsight && (
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              {pipelineInsight}
             </span>
           )}
         </div>
 
         {isLoading ? (
           <div className="space-y-3">
-            <Skeleton className="h-2 w-full rounded-full" />
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+            <Skeleton className="h-2.5 w-full rounded-full" />
+            <div className="grid grid-cols-3 gap-2 lg:grid-cols-6">
               {Array.from({ length: 6 }).map((_, i) => (
                 <Skeleton key={i} className="h-5 w-24" />
               ))}
@@ -342,8 +483,8 @@ export default function OverviewPage() {
           </div>
         ) : (
           <>
-            <div className="flex h-2 w-full overflow-hidden rounded-full bg-gray-100 dark:bg-neutral-800">
-              {(data?.pipeline ?? []).map((seg) => {
+            <div className="flex h-2.5 w-full items-center gap-0.5 overflow-hidden rounded-full bg-gray-100 dark:bg-neutral-800">
+              {pipeline.map((seg) => {
                 if (seg.count === 0 || pipelineTotal === 0) return null;
                 const pct = (seg.count / pipelineTotal) * 100;
                 return (
@@ -355,146 +496,117 @@ export default function OverviewPage() {
                     style={{ width: `${pct}%` }}
                     onClick={() => openFilteredLeads({ status: seg.status })}
                     className={cn(
-                      "h-full transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 cursor-pointer",
-                      PIPELINE_BAR_COLORS[seg.status]
+                      "h-full min-w-[6px] rounded-full transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 cursor-pointer",
+                      STATUS_DOT_COLORS[seg.status]
                     )}
                   />
                 );
               })}
             </div>
 
-            <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 sm:grid-cols-3 lg:grid-cols-6">
-              {(data?.pipeline ?? []).map((seg) => (
-                <button
-                  key={seg.status}
-                  type="button"
-                  onClick={() => openFilteredLeads({ status: seg.status })}
-                  className="flex min-h-[44px] sm:min-h-[28px] items-center justify-between gap-2 rounded-md px-1.5 py-1 text-left text-xs hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 dark:hover:bg-neutral-800/60 cursor-pointer"
-                >
-                  <span className="flex items-center gap-1.5 truncate text-gray-600 dark:text-gray-300">
-                    <span
-                      aria-hidden="true"
-                      className={cn(
-                        "h-2 w-2 shrink-0 rounded-full",
-                        PIPELINE_BAR_COLORS[seg.status]
-                      )}
-                    />
-                    <span className="truncate">
-                      {LEAD_STATUS_LABELS[seg.status]}
+            {allLeadsAreNew && (
+              <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                All leads are waiting for first contact
+              </p>
+            )}
+
+            <div className="mt-4 grid grid-cols-3 gap-2 lg:grid-cols-6">
+              {pipeline.map((seg) => {
+                const pct =
+                  pipelineTotal > 0
+                    ? Math.round((seg.count / pipelineTotal) * 100)
+                    : 0;
+                const isZero = seg.count === 0;
+                return (
+                  <button
+                    key={seg.status}
+                    type="button"
+                    onClick={() => openFilteredLeads({ status: seg.status })}
+                    className={cn(
+                      "flex min-h-[44px] sm:min-h-[32px] items-center justify-between gap-2 rounded-[8px] px-2 py-1 text-left text-xs transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 dark:hover:bg-neutral-800/60 cursor-pointer",
+                      isZero && "opacity-50"
+                    )}
+                  >
+                    <span className="flex min-w-0 items-center gap-1.5 text-gray-600 dark:text-gray-300">
+                      <span
+                        aria-hidden="true"
+                        className={cn(
+                          "h-2 w-2 shrink-0 rounded-full",
+                          STATUS_DOT_COLORS[seg.status]
+                        )}
+                      />
+                      <span className="truncate">
+                        {LEAD_STATUS_LABELS[seg.status]}
+                      </span>
                     </span>
-                  </span>
-                  <span className="font-semibold tabular-nums text-gray-900 dark:text-gray-100">
-                    {seg.count}
-                  </span>
-                </button>
-              ))}
+                    <span className="shrink-0 tabular-nums">
+                      <span className="font-semibold text-gray-900 dark:text-gray-100">
+                        {seg.count}
+                      </span>{" "}
+                      <span className="text-gray-400 dark:text-neutral-500">
+                        {pct}%
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </>
         )}
       </section>
 
-      {/* 3 & 4. Follow-ups due today + Top new leads */}
-      <div className="grid min-w-0 gap-6 min-[1025px]:grid-cols-2 items-start">
-        {/* 3. Follow-ups due today */}
-        <section className="min-w-0 rounded-lg border border-gray-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
-          <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-neutral-800">
+      {/* 5 & 6. Lower Grid: Do this next + Top new leads */}
+      <div className="grid min-w-0 grid-cols-1 items-stretch gap-6 lg:grid-cols-2">
+        {/* Left: Do this next */}
+        <section
+          aria-label="Do this next"
+          className="flex min-w-0 flex-col rounded-[10px] border border-gray-200 bg-white dark:border-neutral-800 dark:bg-neutral-900"
+        >
+          <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3.5 dark:border-neutral-800">
             <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
-              Follow-ups due today
+              Do this next
             </h2>
-            {!isLoading && (
-              <span className="text-xs tabular-nums text-gray-500 dark:text-gray-400">
-                {data?.followUpsDueToday.length ?? 0}
-              </span>
-            )}
           </div>
 
           {isLoading ? (
-            <div className="space-y-2.5 p-4">
-              <Skeleton className="h-10 w-full" />
-              <Skeleton className="h-10 w-full" />
+            <div className="space-y-3 p-5">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <Skeleton key={i} className="h-9 w-full" />
+              ))}
             </div>
-          ) : (data?.followUpsDueToday.length ?? 0) === 0 ? (
-            <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm">
-              <span className="text-gray-500 dark:text-gray-400">
-                No follow-ups due today
-              </span>
-              <button
-                type="button"
-                onClick={() =>
-                  openFilteredLeads({
-                    status: "contacted",
-                    missingFollowUp: true,
-                  })
-                }
-                className="min-h-[44px] sm:min-h-0 text-xs font-medium text-indigo-600 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 rounded px-1 dark:text-indigo-400 cursor-pointer"
-              >
-                Plan follow-ups for contacted leads
-              </button>
+          ) : nextActions.length === 0 ? (
+            <div className="flex flex-1 items-center p-5 text-sm text-gray-500 dark:text-gray-400">
+              You&apos;re all caught up.
             </div>
           ) : (
             <ul className="divide-y divide-gray-200 dark:divide-neutral-800">
-              {data!.followUpsDueToday.map((item) => {
-                const dateText = item.lastContactedAt
-                  ? `Last contacted ${formatShortDate(item.lastContactedAt)}`
-                  : `Due ${formatShortDate(item.nextFollowUpAt)}`;
-
-                return (
-                  <li
-                    key={item.id}
-                    className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 text-sm"
+              {nextActions.map((item) => (
+                <li key={item.key}>
+                  <button
+                    type="button"
+                    onClick={item.onClick}
+                    className="group flex min-h-[44px] w-full items-center justify-between gap-3 px-5 py-3 text-left text-sm transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-600 dark:hover:bg-neutral-800/50 cursor-pointer"
                   >
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate font-medium text-gray-900 dark:text-gray-100">
-                        {item.name}
-                      </p>
-                      <p className="truncate text-xs text-gray-500 dark:text-gray-400">
-                        <span>
-                          {item.sourcePlatform
-                            ? PLATFORM_LABELS[item.sourcePlatform]
-                            : "Source"}
-                        </span>
-                        {" · "}
-                        <span
-                          className={cn(
-                            item.isOverdue &&
-                              "font-medium text-red-600 dark:text-red-400"
-                          )}
-                        >
-                          {dateText}
-                        </span>
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => openDrawer(item.id)}
-                        className="min-h-[44px] min-w-[44px] sm:min-h-[28px] sm:min-w-0 px-2.5 text-xs"
-                      >
-                        Open
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        disabled={markFollowUpDoneMutation.isPending}
-                        onClick={() => markFollowUpDoneMutation.mutate(item.id)}
-                        className="min-h-[44px] min-w-[44px] sm:min-h-[28px] sm:min-w-0 px-2.5 text-xs"
-                      >
-                        Mark done
-                      </Button>
-                    </div>
-                  </li>
-                );
-              })}
+                    <span className="text-gray-900 dark:text-gray-100">
+                      {item.label}
+                    </span>
+                    <ArrowRight
+                      className="h-4 w-4 shrink-0 text-gray-400 transition-transform group-hover:translate-x-0.5 group-hover:text-indigo-600 dark:text-neutral-500 dark:group-hover:text-indigo-400"
+                      strokeWidth={1.5}
+                    />
+                  </button>
+                </li>
+              ))}
             </ul>
           )}
         </section>
 
-        {/* 4. Top new leads */}
-        <section className="min-w-0 rounded-lg border border-gray-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
-          <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3 dark:border-neutral-800">
+        {/* Right: Top new leads */}
+        <section
+          aria-label="Top new leads"
+          className="flex min-w-0 flex-col rounded-[10px] border border-gray-200 bg-white dark:border-neutral-800 dark:bg-neutral-900"
+        >
+          <div className="flex items-center justify-between border-b border-gray-200 px-5 py-3.5 dark:border-neutral-800">
             <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
               Top new leads
             </h2>
@@ -507,7 +619,7 @@ export default function OverviewPage() {
           </div>
 
           {isLoading ? (
-            <div className="space-y-3 p-4">
+            <div className="space-y-3 p-5">
               {Array.from({ length: 5 }).map((_, i) => (
                 <div key={i} className="space-y-1.5">
                   <Skeleton className="h-4 w-48" />
@@ -515,13 +627,13 @@ export default function OverviewPage() {
                 </div>
               ))}
             </div>
-          ) : (data?.topNewLeads.length ?? 0) === 0 ? (
-            <p className="p-4 text-sm text-gray-500 dark:text-gray-400">
+          ) : visibleTopLeads.length === 0 ? (
+            <div className="flex flex-1 items-center p-5 text-sm text-gray-500 dark:text-gray-400">
               No new leads with contact info yet. Run a search.
-            </p>
+            </div>
           ) : (
             <ul className="divide-y divide-gray-200 dark:divide-neutral-800">
-              {data!.topNewLeads.map((lead) => {
+              {visibleTopLeads.map((lead) => {
                 const { displayName, postSnippet } = parseLeadDisplayName(
                   lead.name,
                   lead.sourceSnippet
@@ -533,7 +645,7 @@ export default function OverviewPage() {
                 return (
                   <li
                     key={lead.id}
-                    className="group px-4 py-3 text-sm transition-colors hover:bg-gray-50 dark:hover:bg-neutral-800/40"
+                    className="group px-5 py-3 text-sm transition-colors hover:bg-gray-50 dark:hover:bg-neutral-800/40"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <button
@@ -541,43 +653,39 @@ export default function OverviewPage() {
                         onClick={() => openDrawer(lead.id)}
                         className="min-w-0 flex-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 rounded cursor-pointer"
                       >
-                        <p className="truncate font-medium text-gray-900 dark:text-gray-100">
+                        <p className="truncate font-semibold text-gray-900 dark:text-gray-100">
                           {displayName}
                         </p>
                         {postSnippet && (
-                          <p className="truncate text-xs text-gray-500 dark:text-gray-400">
-                            Post: {postSnippet}
+                          <p className="truncate text-xs text-gray-400 dark:text-neutral-500">
+                            {postSnippet}
                           </p>
                         )}
                         {lead.whyThisLead && (
-                          <p className="mt-0.5 truncate text-xs text-gray-600 dark:text-gray-300">
+                          <p className="mt-0.5 truncate text-xs text-gray-600 dark:text-gray-400">
                             {lead.whyThisLead}
                           </p>
                         )}
                       </button>
 
-                      <div className="flex shrink-0 items-center gap-2">
-                        <span className="rounded border border-gray-200 bg-gray-50 px-1.5 py-0.5 text-[11px] font-medium text-gray-600 dark:border-neutral-700 dark:bg-neutral-800 dark:text-gray-300">
+                      <div className="flex shrink-0 items-center gap-2.5">
+                        <span className="text-xs text-gray-500 dark:text-gray-400">
                           {sourceLabel}
-                        </span>
-                        <span className="hidden sm:inline text-xs text-gray-500 dark:text-gray-400">
-                          {lead.country}
                         </span>
                         <ScoreBadge score={lead.score} />
                       </div>
                     </div>
 
                     <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-                      {/* Clickable contact icons */}
                       <div className="flex items-center gap-1">
                         {lead.email && (
                           <a
                             href={`mailto:${lead.email}`}
                             aria-label={`Email ${displayName}`}
                             title={lead.email}
-                            className="inline-flex min-h-[44px] min-w-[44px] md:min-h-[28px] md:min-w-[28px] items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 dark:text-gray-400 dark:hover:bg-neutral-800 dark:hover:text-gray-100"
+                            className="inline-flex min-h-[44px] min-w-[44px] md:min-h-[28px] md:min-w-[28px] items-center justify-center rounded-[8px] text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 dark:text-gray-400 dark:hover:bg-neutral-800 dark:hover:text-gray-100"
                           >
-                            <Mail className="h-3.5 w-3.5" />
+                            <Mail className="h-4 w-4" strokeWidth={1.5} />
                           </a>
                         )}
                         {lead.whatsapp && (
@@ -590,9 +698,9 @@ export default function OverviewPage() {
                             rel="noopener noreferrer"
                             aria-label={`WhatsApp ${displayName}`}
                             title={lead.whatsapp}
-                            className="inline-flex min-h-[44px] min-w-[44px] md:min-h-[28px] md:min-w-[28px] items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 dark:text-gray-400 dark:hover:bg-neutral-800 dark:hover:text-gray-100"
+                            className="inline-flex min-h-[44px] min-w-[44px] md:min-h-[28px] md:min-w-[28px] items-center justify-center rounded-[8px] text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 dark:text-gray-400 dark:hover:bg-neutral-800 dark:hover:text-gray-100"
                           >
-                            <MessageCircle className="h-3.5 w-3.5" />
+                            <MessageCircle className="h-4 w-4" strokeWidth={1.5} />
                           </a>
                         )}
                         {lead.instagram && (
@@ -602,9 +710,9 @@ export default function OverviewPage() {
                             rel="noopener noreferrer"
                             aria-label={`Instagram for ${displayName}`}
                             title={lead.instagram}
-                            className="inline-flex min-h-[44px] min-w-[44px] md:min-h-[28px] md:min-w-[28px] items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 dark:text-gray-400 dark:hover:bg-neutral-800 dark:hover:text-gray-100"
+                            className="inline-flex min-h-[44px] min-w-[44px] md:min-h-[28px] md:min-w-[28px] items-center justify-center rounded-[8px] text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 dark:text-gray-400 dark:hover:bg-neutral-800 dark:hover:text-gray-100"
                           >
-                            <Instagram className="h-3.5 w-3.5" />
+                            <Instagram className="h-4 w-4" strokeWidth={1.5} />
                           </a>
                         )}
                         {lead.website && (
@@ -614,9 +722,9 @@ export default function OverviewPage() {
                             rel="noopener noreferrer"
                             aria-label={`Website for ${displayName}`}
                             title={lead.website}
-                            className="inline-flex min-h-[44px] min-w-[44px] md:min-h-[28px] md:min-w-[28px] items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 dark:text-gray-400 dark:hover:bg-neutral-800 dark:hover:text-gray-100"
+                            className="inline-flex min-h-[44px] min-w-[44px] md:min-h-[28px] md:min-w-[28px] items-center justify-center rounded-[8px] text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 dark:text-gray-400 dark:hover:bg-neutral-800 dark:hover:text-gray-100"
                           >
-                            <Globe className="h-3.5 w-3.5" />
+                            <Globe className="h-4 w-4" strokeWidth={1.5} />
                           </a>
                         )}
                         {lead.sourceUrl && (
@@ -624,23 +732,22 @@ export default function OverviewPage() {
                             href={buildExternalUrl(lead.sourceUrl)}
                             target="_blank"
                             rel="noopener noreferrer"
-                            aria-label={`Profile or source link for ${displayName}`}
-                            title="Profile / source link"
-                            className="inline-flex min-h-[44px] min-w-[44px] md:min-h-[28px] md:min-w-[28px] items-center justify-center rounded-md text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 dark:text-gray-400 dark:hover:bg-neutral-800 dark:hover:text-gray-100"
+                            aria-label={`Source link for ${displayName}`}
+                            title="Open source"
+                            className="inline-flex min-h-[44px] min-w-[44px] md:min-h-[28px] md:min-w-[28px] items-center justify-center rounded-[8px] text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 dark:text-gray-400 dark:hover:bg-neutral-800 dark:hover:text-gray-100"
                           >
-                            <ExternalLink className="h-3.5 w-3.5" />
+                            <ExternalLink className="h-4 w-4" strokeWidth={1.5} />
                           </a>
                         )}
                       </div>
 
-                      {/* Row actions on hover (always visible on mobile) */}
-                      <div className="flex flex-wrap items-center gap-1.5 opacity-100 min-[1025px]:opacity-0 min-[1025px]:group-hover:opacity-100 min-[1025px]:group-focus-within:opacity-100 transition-opacity">
+                      <div className="flex flex-wrap items-center gap-1.5 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 lg:group-focus-within:opacity-100 transition-opacity">
                         {lead.sourceUrl && (
                           <a
                             href={buildExternalUrl(lead.sourceUrl)}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex min-h-[44px] sm:min-h-[28px] items-center rounded-md border border-gray-200 bg-white px-2 text-xs font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 dark:border-neutral-700 dark:bg-neutral-900 dark:text-gray-200 dark:hover:bg-neutral-800"
+                            className="inline-flex min-h-[44px] sm:min-h-[28px] items-center rounded-[8px] border border-gray-200 bg-white px-2.5 text-xs font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 dark:border-neutral-700 dark:bg-neutral-900 dark:text-gray-200 dark:hover:bg-neutral-800"
                           >
                             Open source
                           </a>
@@ -648,7 +755,7 @@ export default function OverviewPage() {
                         <button
                           type="button"
                           onClick={() => handleCopyMessage(lead)}
-                          className="inline-flex min-h-[44px] sm:min-h-[28px] items-center rounded-md border border-gray-200 bg-white px-2 text-xs font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 dark:border-neutral-700 dark:bg-neutral-900 dark:text-gray-200 dark:hover:bg-neutral-800 cursor-pointer"
+                          className="inline-flex min-h-[44px] sm:min-h-[28px] items-center rounded-[8px] border border-gray-200 bg-white px-2.5 text-xs font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 dark:border-neutral-700 dark:bg-neutral-900 dark:text-gray-200 dark:hover:bg-neutral-800 cursor-pointer"
                         >
                           Copy message
                         </button>
@@ -656,7 +763,7 @@ export default function OverviewPage() {
                           type="button"
                           disabled={markContactedMutation.isPending}
                           onClick={() => markContactedMutation.mutate(lead.id)}
-                          className="inline-flex min-h-[44px] sm:min-h-[28px] items-center rounded-md border border-gray-200 bg-white px-2 text-xs font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-gray-200 dark:hover:bg-neutral-800 cursor-pointer"
+                          className="inline-flex min-h-[44px] sm:min-h-[28px] items-center rounded-[8px] border border-gray-200 bg-white px-2.5 text-xs font-medium text-gray-700 hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-gray-200 dark:hover:bg-neutral-800 cursor-pointer"
                         >
                           Mark contacted
                         </button>
@@ -670,18 +777,21 @@ export default function OverviewPage() {
         </section>
       </div>
 
-      {/* 5. Sources and Activity */}
-      <div className="grid min-w-0 gap-6 min-[1025px]:grid-cols-2">
+      {/* Bottom Row: Leads by source + Recent activity */}
+      <div className="grid min-w-0 grid-cols-1 items-stretch gap-6 lg:grid-cols-2">
         {/* Leads by source */}
-        <section className="min-w-0 rounded-lg border border-gray-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
-          <div className="border-b border-gray-200 px-4 py-3 dark:border-neutral-800">
+        <section
+          aria-label="Leads by source"
+          className="flex min-w-0 flex-col rounded-[10px] border border-gray-200 bg-white dark:border-neutral-800 dark:bg-neutral-900"
+        >
+          <div className="border-b border-gray-200 px-5 py-3.5 dark:border-neutral-800">
             <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
               Leads by source
             </h2>
           </div>
 
           {isLoading ? (
-            <div className="space-y-3 p-4">
+            <div className="space-y-3 p-5">
               {Array.from({ length: 6 }).map((_, i) => (
                 <Skeleton key={i} className="h-5 w-full" />
               ))}
@@ -700,9 +810,9 @@ export default function OverviewPage() {
                       onClick={() =>
                         openFilteredLeads({ platform: src.platform })
                       }
-                      className="flex min-h-[44px] sm:min-h-[36px] w-full items-center gap-3 px-4 py-2 text-left text-sm hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 dark:hover:bg-neutral-800/60 cursor-pointer"
+                      className="flex min-h-[44px] sm:min-h-[36px] w-full items-center gap-3 px-5 py-2 text-left text-sm transition-colors hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-600 dark:hover:bg-neutral-800/60 cursor-pointer"
                     >
-                      <span className="w-24 shrink-0 truncate text-xs font-medium text-gray-700 dark:text-gray-300">
+                      <span className="w-24 shrink-0 truncate text-xs text-gray-600 dark:text-gray-300">
                         {src.label}
                       </span>
                       <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-100 dark:bg-neutral-800">
@@ -713,7 +823,14 @@ export default function OverviewPage() {
                           />
                         )}
                       </div>
-                      <span className="w-10 shrink-0 text-right text-xs font-semibold tabular-nums text-gray-900 dark:text-gray-100">
+                      <span
+                        className={cn(
+                          "w-10 shrink-0 text-right text-xs font-semibold tabular-nums",
+                          src.count === 0
+                            ? "text-gray-400 dark:text-neutral-500"
+                            : "text-gray-900 dark:text-gray-100"
+                        )}
+                      >
                         {src.count}
                       </span>
                     </button>
@@ -725,41 +842,44 @@ export default function OverviewPage() {
         </section>
 
         {/* Recent activity */}
-        <section className="min-w-0 rounded-lg border border-gray-200 bg-white dark:border-neutral-800 dark:bg-neutral-900">
-          <div className="border-b border-gray-200 px-4 py-3 dark:border-neutral-800">
+        <section
+          aria-label="Recent activity"
+          className="flex min-w-0 flex-col rounded-[10px] border border-gray-200 bg-white dark:border-neutral-800 dark:bg-neutral-900"
+        >
+          <div className="border-b border-gray-200 px-5 py-3.5 dark:border-neutral-800">
             <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
               Recent activity
             </h2>
           </div>
 
           {isLoading ? (
-            <div className="space-y-3 p-4">
+            <div className="space-y-3 p-5">
               {Array.from({ length: 5 }).map((_, i) => (
                 <Skeleton key={i} className="h-5 w-full" />
               ))}
             </div>
-          ) : (data?.recentActivity.length ?? 0) === 0 ? (
-            <p className="p-4 text-sm text-gray-500 dark:text-gray-400">
+          ) : visibleActivity.length === 0 ? (
+            <div className="flex flex-1 items-center p-5 text-sm text-gray-500 dark:text-gray-400">
               Activity will appear here.
-            </p>
+            </div>
           ) : (
             <ul className="divide-y divide-gray-200 dark:divide-neutral-800">
-              {data!.recentActivity.map((act) => (
+              {visibleActivity.map((act) => (
                 <li
                   key={act.id}
-                  className="flex items-start justify-between gap-3 px-4 py-2.5 text-sm"
+                  className="flex items-start justify-between gap-3 px-5 py-2.5 text-sm"
                 >
                   <div className="min-w-0 flex-1">
                     {act.leadId ? (
                       <button
                         type="button"
                         onClick={() => openDrawer(act.leadId!)}
-                        className="truncate text-left font-medium text-gray-900 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 rounded dark:text-gray-100 cursor-pointer block max-w-full"
+                        className="block max-w-full truncate text-left font-semibold text-gray-900 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 rounded dark:text-gray-100 cursor-pointer"
                       >
                         {act.title}
                       </button>
                     ) : (
-                      <p className="truncate font-medium text-gray-900 dark:text-gray-100">
+                      <p className="truncate font-semibold text-gray-900 dark:text-gray-100">
                         {act.title}
                       </p>
                     )}
@@ -769,7 +889,7 @@ export default function OverviewPage() {
                       </p>
                     )}
                   </div>
-                  <span className="shrink-0 text-xs tabular-nums text-gray-500 dark:text-gray-400">
+                  <span className="shrink-0 text-xs tabular-nums text-gray-400 dark:text-neutral-500">
                     {formatRelativeTime(act.at)}
                   </span>
                 </li>

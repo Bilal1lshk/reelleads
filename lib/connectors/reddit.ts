@@ -83,7 +83,14 @@ export async function fetchRedditLeads(
   const userAgent =
     process.env.REDDIT_USER_AGENT || "web:nicheleads:v1.0 (by /u/nicheleads_app)";
   const queries = buildQueries(params.niche);
-  const cutoffEpoch = Math.floor(Date.now() / 1000) - MAX_AGE_SECONDS;
+  const defaultCutoff = Math.floor(Date.now() / 1000) - MAX_AGE_SECONDS;
+  const sinceEpoch = params.sinceIso
+    ? Math.floor(new Date(params.sinceIso).getTime() / 1000)
+    : 0;
+  const cutoffEpoch =
+    Number.isFinite(sinceEpoch) && sinceEpoch > defaultCutoff
+      ? sinceEpoch
+      : defaultCutoff;
 
   const jobs: Array<{ sub: string; query: string }> = [];
   for (const sub of SUBREDDITS) {
