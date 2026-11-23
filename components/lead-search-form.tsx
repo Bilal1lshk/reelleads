@@ -106,7 +106,7 @@ const PLATFORM_OPTIONS: {
   { value: "youtube", label: "YouTube" },
   { value: "instagram", label: "Instagram" },
   { value: "reddit", label: "Reddit" },
-  { value: "tavily", label: "Tavily (Local)" },
+  { value: "tavily", label: "Browser Search" },
 ];
 
 type SourcePresetMode = "recommended" | "local_business" | "hiring" | "custom";
@@ -120,7 +120,7 @@ const SOURCE_PRESET_OPTIONS: PresetCardOption<SourcePresetMode>[] = [
   {
     value: "local_business",
     title: "Local businesses",
-    description: "Tavily search for high-potential local businesses.",
+    description: "Browser search for high-potential local businesses.",
   },
   {
     value: "hiring",
