@@ -977,7 +977,7 @@ export function LeadsTableView({ savedOnly = false }: { savedOnly?: boolean }) {
           >
             <option value="all">All sources</option>
             {(
-              ["linkedin", "youtube", "reddit", "google_cse", "exa", "instagram", "google_places", "manual", "csv_import"] as LeadPlatform[]
+              ["linkedin", "youtube", "reddit", "google_cse", "exa", "tavily", "instagram", "google_places", "manual", "csv_import"] as LeadPlatform[]
             ).map((p) => (
               <option key={p} value={p}>
                 {PLATFORM_LABELS[p]}

@@ -187,6 +187,8 @@ export function buildWhyThisLead(input: {
     parts.push("YouTube channel");
   } else if (input.platform === "google_places") {
     parts.push("Local business with web presence");
+  } else if (input.platform === "tavily") {
+    parts.push(`Local business in ${input.niche || APP_CONFIG.niche} via Tavily`);
   } else if (input.platform === "instagram") {
     parts.push(`Instagram profile in ${input.niche || APP_CONFIG.niche}`);
   } else {

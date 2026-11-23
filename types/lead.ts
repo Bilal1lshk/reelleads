@@ -29,6 +29,7 @@ export type LeadPlatform =
   | "google_places"
   | "google_cse"
   | "exa"
+  | "tavily"
   | "csv_import"
   | "manual";
 

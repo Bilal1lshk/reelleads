@@ -106,17 +106,21 @@ const PLATFORM_OPTIONS: {
   { value: "youtube", label: "YouTube" },
   { value: "instagram", label: "Instagram" },
   { value: "reddit", label: "Reddit" },
-  { value: "google_cse", label: "Google" },
-  { value: "google_places", label: "Google Places" },
+  { value: "tavily", label: "Tavily (Local)" },
 ];
 
-type SourcePresetMode = "recommended" | "hiring" | "custom";
+type SourcePresetMode = "recommended" | "local_business" | "hiring" | "custom";
 
 const SOURCE_PRESET_OPTIONS: PresetCardOption<SourcePresetMode>[] = [
   {
     value: "recommended",
     title: "Recommended",
     description: "Runs all ready sources automatically.",
+  },
+  {
+    value: "local_business",
+    title: "Local businesses",
+    description: "Tavily search for high-potential local businesses.",
   },
   {
     value: "hiring",
@@ -130,6 +134,7 @@ const SOURCE_PRESET_OPTIONS: PresetCardOption<SourcePresetMode>[] = [
   },
 ];
 
+const LOCAL_BUSINESS_PLATFORMS: LeadPlatform[] = ["tavily"];
 const HIRING_PLATFORMS: LeadPlatform[] = ["reddit", "linkedin", "exa"];
 
 const LEAD_COUNT_OPTIONS: { value: 10 | 25 | 50 | 100; label: string }[] = [
@@ -313,6 +318,9 @@ export function LeadSearchForm() {
   const activePlatforms = React.useMemo<LeadPlatform[]>(() => {
     if (sourceMode === "recommended") {
       return readyPlatforms;
+    }
+    if (sourceMode === "local_business") {
+      return LOCAL_BUSINESS_PLATFORMS.filter((p) => isSourceConfigured(p));
     }
     if (sourceMode === "hiring") {
       return HIRING_PLATFORMS.filter((p) => isSourceConfigured(p));
@@ -523,8 +531,8 @@ export function LeadSearchForm() {
         if (res.leads.length > 0) {
           const runId = res.searchRunId || "";
           notifyNewSearchResults(runId);
-          notify(`${res.leads.length} leads found. Review`, "success", {
-            label: "Review",
+          notify(`${res.leads.length} leads fetched — ready to review`, "success", {
+            label: "Show leads",
             onClick: () => openReviewModal(runId || null),
           });
           try {
@@ -534,17 +542,27 @@ export function LeadSearchForm() {
               Notification.permission === "granted"
             ) {
               new Notification("NicheLeads", {
-                body: `${res.leads.length} leads found. Review before saving.`,
+                body: `${res.leads.length} leads fetched. Review before saving.`,
               });
             }
           } catch {
             // ignore notification errors
           }
+        } else {
+          notify("No new leads fetched for this search");
         }
       } else {
         resetFilters();
         queryClient.invalidateQueries({ queryKey: ["leads"] });
         queryClient.invalidateQueries({ queryKey: ["overview"] });
+        if (res.leads.length > 0) {
+          notify(`${res.leads.length} leads fetched`, "success", {
+            label: "Show leads",
+            onClick: () => router.push("/leads"),
+          });
+        } else {
+          notify("No new leads fetched for this search");
+        }
       }
     } catch (err) {
       window.clearInterval(timer);
@@ -824,7 +842,7 @@ export function LeadSearchForm() {
                         onClick={() => router.push("/leads")}
                         className="min-h-[44px] sm:min-h-[32px]"
                       >
-                        View leads
+                        Show all leads
                       </Button>
                     )}
                     <Button
@@ -841,6 +859,54 @@ export function LeadSearchForm() {
                       New search
                     </Button>
                   </div>
+                </div>
+              )}
+
+              {previewLeads.length > 0 && (
+                <div className="divide-y divide-gray-100 rounded-[8px] border border-gray-200 bg-gray-50/50 dark:divide-neutral-800 dark:border-neutral-800 dark:bg-neutral-950">
+                  {previewLeads.slice(0, 10).map((lead) => (
+                    <div
+                      key={lead.id}
+                      className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate font-medium text-gray-900 dark:text-gray-100">
+                          {lead.name}
+                        </p>
+                        <p className="truncate text-gray-500 dark:text-gray-400">
+                          {[
+                            lead.sourcePlatform
+                              ? PLATFORM_LABELS[lead.sourcePlatform] || lead.sourcePlatform
+                              : null,
+                            lead.city || lead.country !== "Unknown" ? lead.city || lead.country : null,
+                            lead.email || lead.whatsapp || lead.instagram || lead.website,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <span className="rounded border border-gray-200 bg-white px-1.5 py-0.5 font-medium tabular-nums text-gray-700 dark:border-neutral-700 dark:bg-neutral-900 dark:text-gray-200">
+                          {lead.score}
+                        </span>
+                        {lead.sourceUrl && (
+                          <a
+                            href={lead.sourceUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="font-medium text-indigo-600 hover:underline dark:text-indigo-400"
+                          >
+                            Open
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  {previewLeads.length > 10 && (
+                    <div className="px-3 py-2 text-xs text-gray-500 dark:text-gray-400">
+                      +{previewLeads.length - 10} more leads fetched
+                    </div>
+                  )}
                 </div>
               )}
             </div>

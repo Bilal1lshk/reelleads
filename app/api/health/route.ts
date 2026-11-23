@@ -26,17 +26,15 @@ export async function GET() {
     connectors: {
       reddit: true,
       youtube: Boolean(process.env.YOUTUBE_API_KEY),
-      google_cse: Boolean(
-        (process.env.GOOGLE_CSE_API_KEY || process.env.Custom_Search_API_KEY) &&
-          process.env.GOOGLE_CSE_CX
-      ),
+      google_cse: false,
       linkedin: Boolean(
         (process.env.GOOGLE_CSE_API_KEY || process.env.Custom_Search_API_KEY) &&
           process.env.GOOGLE_CSE_CX
       ),
       exa: Boolean(process.env.EXA_API_KEY?.trim()),
+      tavily: Boolean(process.env.TAVILY_API_KEY?.trim()),
       facebook: Boolean(process.env.FACEBOOK_ACCESS_TOKEN),
-      google_places: Boolean(process.env.GOOGLE_PLACES_API_KEY?.trim()),
+      google_places: false,
       instagram: Boolean(process.env.APIFY_API_TOKEN),
       tiktok: false,
       x: false,

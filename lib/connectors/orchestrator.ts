@@ -1,11 +1,7 @@
 import { fetchApifySocialLeads } from "@/lib/connectors/apify";
 import { fetchExaLeads } from "@/lib/connectors/exa";
 import { fetchFacebookLeads } from "@/lib/connectors/facebook";
-import {
-  fetchGoogleCseLeads,
-  fetchLinkedInLeadsViaGoogleCse,
-} from "@/lib/connectors/google-cse";
-import { fetchGooglePlacesLeads } from "@/lib/connectors/google-places";
+import { fetchLinkedInLeadsViaGoogleCse } from "@/lib/connectors/google-cse";
 import { fetchRedditLeads } from "@/lib/connectors/reddit";
 import {
   computeLeadScore,
@@ -20,6 +16,7 @@ import {
   type SourceResult,
 } from "@/lib/connectors/source-utils";
 import { fetchYouTubeLeads } from "@/lib/connectors/youtube";
+import { fetchTavilyLeads } from "@/lib/connectors/tavily";
 import { isAllowedCountry, resolveCountryFilters } from "@/lib/countries";
 import {
   buildDedupeKey,
@@ -38,18 +35,11 @@ import type {
 
 export function getDefaultPlatforms(): LeadPlatform[] {
   const defaults: LeadPlatform[] = ["youtube", "instagram"];
-  if (
-    (process.env.GOOGLE_CSE_API_KEY?.trim() ||
-      process.env.Custom_Search_API_KEY?.trim()) &&
-    process.env.GOOGLE_CSE_CX?.trim()
-  ) {
-    defaults.unshift("linkedin");
-  }
   if (process.env.EXA_API_KEY?.trim()) {
     defaults.unshift("exa");
   }
-  if (process.env.GOOGLE_PLACES_API_KEY?.trim()) {
-    defaults.push("google_places");
+  if (process.env.TAVILY_API_KEY?.trim()) {
+    defaults.push("tavily");
   }
   return defaults;
 }
@@ -64,13 +54,14 @@ function buildConnectorTask(
     case "youtube":
       return (ctx) => fetchYouTubeLeads(params, ctx);
     case "google_cse":
-      return (ctx) => fetchGoogleCseLeads(params, ctx);
+    case "google_places":
+      return null;
     case "linkedin":
       return (ctx) => fetchLinkedInLeadsViaGoogleCse(params, ctx);
     case "exa":
       return (ctx) => fetchExaLeads(params, ctx);
-    case "google_places":
-      return (ctx) => fetchGooglePlacesLeads(params, ctx);
+    case "tavily":
+      return (ctx) => fetchTavilyLeads(params, ctx);
     case "facebook":
       return () => fetchFacebookLeads(params);
     case "instagram":

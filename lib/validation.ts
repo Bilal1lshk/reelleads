@@ -33,6 +33,7 @@ export const leadPlatformEnum = z.enum([
   "google_places",
   "google_cse",
   "exa",
+  "tavily",
   "csv_import",
   "manual",
 ]);

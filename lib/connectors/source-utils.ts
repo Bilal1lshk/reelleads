@@ -23,6 +23,7 @@ export const SOURCE_LABELS: Record<LeadPlatform, string> = {
   google_cse: "Google",
   google_places: "Google Maps",
   exa: "AI Agents",
+  tavily: "Tavily",
   instagram: "Instagram",
   tiktok: "TikTok",
   x: "X",
